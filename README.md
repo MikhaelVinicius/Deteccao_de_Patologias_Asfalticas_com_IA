@@ -1,0 +1,1 @@
+# Detec-o-de-Patologias-Asf-lticas-com-IA
