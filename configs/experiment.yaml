@@ -1,0 +1,26 @@
+project: roadedge_br
+data: configs/dataset.yaml
+
+models:
+  - yolov8n.pt
+  - yolo11n.pt
+  - yolo26n.pt
+
+image_sizes: [512, 640]
+
+screening_seed: 42
+final_seeds: [13, 42, 101]
+
+finalists: [] # apos a triagem: [{model: yolo11n.pt, imgsz: 512}, ...]
+
+epochs_screening: 30
+epochs_final: 100
+
+batch: -1
+patience: 20
+device: 0
+workers: 2
+
+optimizer: AdamW
+lr0: 0.002
+weight_decay: 0.0005
