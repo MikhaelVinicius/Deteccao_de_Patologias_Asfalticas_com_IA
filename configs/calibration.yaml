@@ -1,0 +1,7 @@
+# A calibracao INT8 usa somente imagens representativas retiradas do treino.
+path: .
+train: data/splits/calibration.txt
+val: data/splits/calibration.txt
+test: data/splits/calibration.txt
+names:
+  0: panela

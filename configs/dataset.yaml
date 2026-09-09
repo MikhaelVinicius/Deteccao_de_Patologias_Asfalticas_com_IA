@@ -1,0 +1,7 @@
+# Arquivo consumido pelo Ultralytics. Os TXT sao gerados por split_groups.py.
+path: .
+train: data/splits/train.txt
+val: data/splits/val.txt
+test: data/splits/test.txt
+names:
+  0: panela

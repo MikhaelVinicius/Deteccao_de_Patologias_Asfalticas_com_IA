@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roadedge-br"
+version = "0.1.0"
+description = "Pipeline reproduzivel para deteccao Edge de danos em pavimentos"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "ultralytics[export]>=8.4.83,<9",
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "scikit-learn>=1.6,<2",
+    "scipy>=1.13,<2",
+    "Pillow>=10,<13",
+    "ImageHash>=4.3,<5",
+    "PyYAML>=6,<7",
+    "joblib>=1.4,<2",
+]
+
+[project.optional-dependencies]
+tracking = ["mlflow>=3,<4"]
+dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
