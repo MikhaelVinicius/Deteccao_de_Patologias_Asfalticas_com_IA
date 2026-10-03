@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   ultralytics_yolo: ^0.6.15
+  camera: ^0.12.1
 
 dev_dependencies:
   flutter_test:
@@ -52,15 +53,14 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
-
   assets:
     - assets/models/yolov8n_w8a16_calib1000.tflite
+    - assets/models/best_fp32.tflite
+    - assets/models/yolov8n_fp32_320.tflite
+    - assets/models/yolov8n_fp32_416.tflite
     - assets/images/pothole_test.png
+    - assets/models/yolov8n_fp32_384.tflite
 
   # To add assets to your application, add an assets section, like this:
   # assets:
