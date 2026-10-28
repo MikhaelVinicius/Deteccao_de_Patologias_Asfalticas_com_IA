@@ -1,23 +1,13 @@
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:ultralytics_yolo/ultralytics_yolo.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  final cameras = await availableCameras();
-
-  runApp(
-    RoadEdgeApp(cameras: cameras),
-  );
+  runApp(const RoadEdgeApp());
 }
 
 class RoadEdgeApp extends StatelessWidget {
-  final List<CameraDescription> cameras;
-
-  const RoadEdgeApp({
-    super.key,
-    required this.cameras,
-  });
+  const RoadEdgeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -25,97 +15,156 @@ class RoadEdgeApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'RoadEdge-BR',
       theme: ThemeData.dark(),
-      home: CameraScreen(cameras: cameras),
+      home: const RoadEdgeCameraScreen(),
     );
   }
 }
 
-class CameraScreen extends StatefulWidget {
-  final List<CameraDescription> cameras;
-
-  const CameraScreen({
-    super.key,
-    required this.cameras,
-  });
+class RoadEdgeCameraScreen extends StatefulWidget {
+  const RoadEdgeCameraScreen({super.key});
 
   @override
-  State<CameraScreen> createState() => _CameraScreenState();
+  State<RoadEdgeCameraScreen> createState() =>
+      _RoadEdgeCameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
-  CameraController? _controller;
+class _RoadEdgeCameraScreenState extends State<RoadEdgeCameraScreen> {
+  final YOLOViewController _controller = YOLOViewController();
 
-  bool _inicializando = true;
-  String? _erro;
+  static const int _totalAmostras = 1000;
+
+  final List<double> _tempos = [];
+  final List<double> _fpsValores = [];
+
+  int _detections = 0;
+
+  double? _processingTime;
+  double? _fps;
+
+  bool _benchmarkFinalizado = false;
+
+  double _percentile(List<double> valoresOrdenados, double p) {
+    if (valoresOrdenados.isEmpty) {
+      return 0;
+    }
+
+    final position = (valoresOrdenados.length - 1) * p;
+    final lower = position.floor();
+    final upper = position.ceil();
+
+    if (lower == upper) {
+      return valoresOrdenados[lower];
+    }
+
+    final weight = position - lower;
+
+    return valoresOrdenados[lower] * (1 - weight) +
+        valoresOrdenados[upper] * weight;
+  }
+
+  void _registrarMetricas(dynamic metrics) {
+    if (_benchmarkFinalizado) {
+      return;
+    }
+
+final tempo = metrics.processingTimeMs.toDouble();
+final fpsAtual = metrics.fps.toDouble();
+
+if (tempo <= 0) {
+  return;
+}
+
+_tempos.add(tempo);
+
+if (fpsAtual > 0) {
+  _fpsValores.add(fpsAtual);
+}
+
+    if (_tempos.length % 100 == 0) {
+      debugPrint(
+        'Benchmark câmera: ${_tempos.length}/$_totalAmostras',
+      );
+    }
+
+    if (_tempos.length >= _totalAmostras) {
+      _finalizarBenchmark();
+    }
+  }
+
+  void _finalizarBenchmark() {
+    if (_benchmarkFinalizado || _tempos.isEmpty) {
+      return;
+    }
+
+    _benchmarkFinalizado = true;
+
+    final temposOrdenados = List<double>.from(_tempos)..sort();
+
+    final soma =
+        _tempos.fold<double>(0, (anterior, atual) => anterior + atual);
+
+    final media = soma / _tempos.length;
+
+    final mediana = _percentile(temposOrdenados, 0.50);
+    final p95 = _percentile(temposOrdenados, 0.95);
+    final p99 = _percentile(temposOrdenados, 0.99);
+
+    final minimo = temposOrdenados.first;
+    final maximo = temposOrdenados.last;
+
+    final fpsMedio = _fpsValores.isEmpty
+        ? 0.0
+        : _fpsValores.fold<double>(
+              0,
+              (anterior, atual) => anterior + atual,
+            ) /
+            _fpsValores.length;
+
+    debugPrint('');
+    debugPrint('==========================================');
+    debugPrint('ROADEDGE-BR - BENCHMARK CÂMERA AO VIVO');
+    debugPrint('==========================================');
+    debugPrint('Modelo: YOLOv8n FP32 384x384');
+    debugPrint('Backend: GPU');
+    debugPrint('Confidence: 0.25');
+    debugPrint('IoU: 0.70');
+    debugPrint('Amostras: ${_tempos.length}');
+    debugPrint('------------------------------------------');
+    debugPrint('Média: ${media.toStringAsFixed(2)} ms');
+    debugPrint('Mediana: ${mediana.toStringAsFixed(2)} ms');
+    debugPrint('P95: ${p95.toStringAsFixed(2)} ms');
+    debugPrint('P99: ${p99.toStringAsFixed(2)} ms');
+    debugPrint('Mínimo: ${minimo.toStringAsFixed(2)} ms');
+    debugPrint('Máximo: ${maximo.toStringAsFixed(2)} ms');
+    debugPrint(
+      'FPS médio reportado: ${fpsMedio.toStringAsFixed(2)}',
+    );
+    debugPrint('==========================================');
+    debugPrint('');
+  }
 
   @override
   void initState() {
     super.initState();
-    _inicializarCamera();
-  }
 
-  Future<void> _inicializarCamera() async {
-    if (widget.cameras.isEmpty) {
-      setState(() {
-        _erro = 'Nenhuma câmera encontrada.';
-        _inicializando = false;
-      });
-      return;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _controller.setConfidenceThreshold(0.25);
+        await _controller.setIoUThreshold(0.70);
+        await _controller.setShowOverlays(true);
 
-    try {
-      // Procura primeiro a câmera traseira.
-      CameraDescription cameraSelecionada = widget.cameras.first;
-
-      for (final camera in widget.cameras) {
-        if (camera.lensDirection == CameraLensDirection.back) {
-          cameraSelecionada = camera;
-          break;
-        }
+        debugPrint('');
+        debugPrint('===== ROADEDGE YOLO LIVE =====');
+        debugPrint('Modelo: YOLOv8n FP32 384x384');
+        debugPrint('Confidence: 0.25');
+        debugPrint('IoU: 0.70');
+        debugPrint('Benchmark: $_totalAmostras amostras');
+        debugPrint('==============================');
+        debugPrint('');
+      } catch (e) {
+        debugPrint('Erro ao configurar YOLOView: $e');
       }
-
-      final controller = CameraController(
-        cameraSelecionada,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-
-      await controller.initialize();
-
-      if (!mounted) {
-        await controller.dispose();
-        return;
-      }
-
-      setState(() {
-        _controller = controller;
-        _inicializando = false;
-      });
-
-      debugPrint('===== ROADEDGE CÂMERA =====');
-      debugPrint('Câmeras encontradas: ${widget.cameras.length}');
-      debugPrint('Câmera utilizada: ${cameraSelecionada.name}');
-      debugPrint('Direção: ${cameraSelecionada.lensDirection}');
-      debugPrint('Preview inicializado com sucesso.');
-      debugPrint('===========================');
-    } catch (e) {
-      debugPrint('Erro ao inicializar câmera: $e');
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _erro = e.toString();
-        _inicializando = false;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
+    });
   }
 
   @override
@@ -123,93 +172,102 @@ class _CameraScreenState extends State<CameraScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('RoadEdge-BR • Teste de câmera'),
+        title: const Text('RoadEdge-BR • Benchmark ao vivo'),
         centerTitle: true,
       ),
-      body: _construirConteudo(),
-    );
-  }
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: YOLOView(
+              modelPath:
+                  'assets/models/yolov8n_fp32_384.tflite',
+              task: YOLOTask.detect,
+              controller: _controller,
+              useGpu: true,
+              onResult: (results) {
+                if (!mounted) {
+                  return;
+                }
 
-  Widget _construirConteudo() {
-    if (_inicializando) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Inicializando câmera...'),
-          ],
-        ),
-      );
-    }
+                setState(() {
+                  _detections = results.length;
+                });
+              },
+              onPerformanceMetrics: (metrics) {
+                _registrarMetricas(metrics);
 
-    if (_erro != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                size: 64,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Não foi possível inicializar a câmera.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _erro!,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+                if (!mounted) {
+                  return;
+                }
 
-    final controller = _controller;
-
-    if (controller == null || !controller.value.isInitialized) {
-      return const Center(
-        child: Text('Câmera não disponível.'),
-      );
-    }
-
-    return Column(
-      children: [
-        Expanded(
-          child: Center(
-            child: AspectRatio(
-              aspectRatio: controller.value.aspectRatio,
-              child: CameraPreview(controller),
+                setState(() {
+                  _processingTime = metrics.processingTimeMs;
+                  _fps = metrics.fps;
+                });
+              },
             ),
           ),
-        ),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          child: const Column(
-            children: [
-              Text(
-                'Câmera ativa',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 20,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(12),
               ),
-              SizedBox(height: 6),
-              Text(
-                'Nesta etapa o YOLO ainda não está executando.',
-                textAlign: TextAlign.center,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'YOLOv8n FP32 • 384 × 384 • GPU',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  Text('Detecções: $_detections'),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    _processingTime == null
+                        ? 'Inferência: aguardando...'
+                        : 'Inferência: '
+                            '${_processingTime!.toStringAsFixed(2)} ms',
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    _fps == null
+                        ? 'FPS: aguardando...'
+                        : 'FPS: ${_fps!.toStringAsFixed(2)}',
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  Text(
+                    _benchmarkFinalizado
+                        ? 'Benchmark concluído: '
+                            '${_tempos.length}/$_totalAmostras'
+                        : 'Benchmark: '
+                            '${_tempos.length}/$_totalAmostras',
+                    style: TextStyle(
+                      fontWeight: _benchmarkFinalizado
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
